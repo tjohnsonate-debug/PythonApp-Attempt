@@ -33,7 +33,12 @@ def get_fred_data(series_id):
 # 3. Main Logic
 with st.spinner('Fetching latest FRED data...'):
     df_gov = get_fred_data("GFDGDPA188S")
-    df_private = get_fred_data("QUSPAM770A") or get_fred_data("TOTCCWG1USA300N")
+    # Try the primary series first
+    df_private = get_fred_data("QUSPAM770A")
+
+    # If that failed (is None), try the fallback series
+    if df_private is None:
+        df_private = get_fred_data("TOTCCWG1USA300N")
 
 if df_gov is not None and df_private is not None:
     # Processing
@@ -59,6 +64,7 @@ if df_gov is not None and df_private is not None:
     plt.tight_layout()
 
     # Display in Streamlit
+    st.pyplot(fig, use_container_width=True)
     st.pyplot(fig)
 
     # 5. Mobile-friendly Stats
