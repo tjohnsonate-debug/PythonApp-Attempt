@@ -5,65 +5,53 @@ import requests
 import io
 
 st.set_page_config(page_title="Global Reserves", page_icon="🌍")
-st.title("🌍 Global Reserve Composition")
-st.markdown("### USD Share of Global Foreign Exchange Reserves")
+st.title("🌍 Global USD Demand")
+st.markdown("### US Dollar Assets Held by Foreign Authorities")
+st.caption("A proxy for global central bank USD reserves held at the Fed.")
 
 @st.cache_data
-def get_fred_data(series_id):
+def get_reliable_fred_data(series_id):
+    # This URL uses the standard FRED export format
     url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
             df = pd.read_csv(io.StringIO(response.text))
-            # FRED often uses 'DATE' or 'observation_date'
             date_col = df.columns[0]
             df[date_col] = pd.to_datetime(df[date_col])
             df.set_index(date_col, inplace=True)
             df[series_id] = pd.to_numeric(df.iloc[:, 0], errors='coerce')
-            return df[[series_id]]
+            return df
+        return None
     except:
         return None
 
-# --- NEW SERIES IDs ---
-# USD Share of Allocated Reserves (World)
-# Note: FRED ID 'RRGRAUSRT' is the standard for World USD share percentage
-with st.spinner('Fetching IMF Global Data...'):
-    df_usd = get_fred_data("RRGRAUSRT")
-    # Adding Gold as a comparison (Gold as % of Total Reserves)
-    # This gives the "multiple lines" feel you wanted
-    df_gold = get_fred_data("RRGRAAUVRT") 
+with st.spinner('Accessing Fed Balance Sheet...'):
+    # WRESBAL = Reserve Bank Credit: US Dollar Assets Held for Foreign/International Accounts
+    df = get_reliable_fred_data("WRESBAL")
 
-if df_usd is not None:
-    # Combine data
-    df = df_usd.rename(columns={"RRGRAUSRT": "US Dollar Share (%)"})
-    if df_gold is not None:
-        df["Gold Share (%)"] = df_gold["RRGRAAUVRT"]
-
-    # 1. Visualization
+if df is not None:
+    # 1. Plotting
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(df.index, df["US Dollar Share (%)"], label="US Dollar", color="#1f77b4", lw=2.5)
-    if "Gold Share (%)" in df.columns:
-        ax.plot(df.index, df["Gold Share (%)"], label="Gold", color="#ffd700", lw=2)
-
-    ax.set_ylim(0, 100)
-    ax.set_ylabel("Percentage (%)")
-    ax.set_title("Global Reserve Composition (Allocated Shares)")
-    ax.legend()
+    # Scale to Billions for easier reading
+    df_billions = df / 1000 
+    ax.plot(df_billions.index, df_billions["WRESBAL"], color="#2a9d8f", lw=2)
+    
+    ax.set_ylabel("Billions of USD")
+    ax.set_title("Total USD Reserves Held at the Fed")
     ax.grid(True, alpha=0.3)
     
     st.pyplot(fig, use_container_width=True)
 
-    # 2. Stats for iPhone
-    st.subheader("Current Snapshot")
-    c1, c2 = st.columns(2)
-    latest_usd = df["US Dollar Share (%)"].dropna().iloc[-1]
-    c1.metric("USD Share", f"{latest_usd:.1f}%")
+    # 2. Stats
+    current_val = df_billions["WRESBAL"].iloc[-1]
+    prev_val = df_billions["WRESBAL"].iloc[-52] # 1 year ago
+    delta = current_val - prev_val
     
-    if "Gold Share (%)" in df.columns:
-        latest_gold = df["Gold Share (%)"].dropna().iloc[-1]
-        c2.metric("Gold Share", f"{latest_gold:.1f}%")
+    st.metric("Total USD Holdings", f"${current_val:,.0f}B", f"{delta:,.0f}B vs Last Year")
+    
+    st.info("Note: This tracks 'Custody Holdings'—the actual dollars global central banks store at the NY Fed. It is the most transparent real-time measure of USD reserve demand.")
 
-    st.info("The USD share has trended down from ~70% in the early 2000s to ~58% today as central banks diversify.")
 else:
-    st.error("FRED is currently restricting access to the COFER series. Try refreshing in a few minutes or check your requirements.txt for 'requests'.")
+    st.error("Data connection failed. Please ensure 'requests' is in your requirements.txt.")
